@@ -8,8 +8,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROVIDER_DEFAULTS = {
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "chat_model": "gemini-3.5-flash",
-        "fallback_chat_model": "gemini-3.5-flash-lite",
+        "chat_model": "gemini-3.5-flash-lite",
+        "fallback_chat_model": "gemini-3.1-flash-lite,gemini-flash-lite-latest,gemini-3.5-flash",
         "reasoning_effort": "low",
         "embedding_model": "gemini-embedding-001",
     },
@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 45
     chat_timeout_seconds: float = 20
 
-    upload_dir: str = "./uploads"
     max_upload_mb: int = 20
 
     chunk_size_chars: int = 3200
@@ -74,7 +73,8 @@ class Settings(BaseSettings):
         fallback = self.ai_fallback_chat_model
         if fallback is None:
             fallback = self._provider_default("fallback_chat_model")
-        return [m for m in dict.fromkeys([self.resolved_chat_model, fallback]) if m]
+        fallbacks = [m.strip() for m in fallback.split(",")]
+        return [m for m in dict.fromkeys([self.resolved_chat_model, *fallbacks]) if m]
 
     @property
     def resolved_reasoning_effort(self) -> str:
@@ -85,14 +85,6 @@ class Settings(BaseSettings):
     @property
     def resolved_embedding_model(self) -> str:
         return self.ai_embedding_model or self._provider_default("embedding_model")
-
-    @property
-    def upload_path(self) -> Path:
-        path = Path(self.upload_dir)
-        if not path.is_absolute():
-            path = BASE_DIR / path
-        path.mkdir(parents=True, exist_ok=True)
-        return path.resolve()
 
     @property
     def max_upload_bytes(self) -> int:

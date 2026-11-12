@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from functools import lru_cache
 
 import openai
@@ -76,13 +77,32 @@ def _complete(client: OpenAI, model: str, messages: list[dict], reasoning_effort
     return response.choices[0].message.content or "{}"
 
 
+_cooldowns: dict[str, float] = {}
+MAX_COOLDOWN_SECONDS = 3600
+DEFAULT_COOLDOWN_SECONDS = 60
+
+
+def _retry_delay_seconds(exc: openai.RateLimitError) -> float:
+    match = re.search(r"retryDelay['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)s", str(getattr(exc, "body", "") or exc))
+    delay = float(match.group(1)) if match else DEFAULT_COOLDOWN_SECONDS
+    return min(max(delay, 1.0), MAX_COOLDOWN_SECONDS)
+
+
 def chat_json(messages: list[dict]) -> str:
     settings = get_settings()
-    client = get_client().with_options(max_retries=1, timeout=settings.chat_timeout_seconds)
+    client = get_client().with_options(max_retries=0, timeout=settings.chat_timeout_seconds)
+    models = settings.resolved_chat_models
+    now = time.monotonic()
+    available = [m for m in models if _cooldowns.get(m, 0) <= now] or models
     last_error: Exception | None = None
-    for model in settings.resolved_chat_models:
+    for model in available:
         try:
             return _complete(client, model, messages, settings.resolved_reasoning_effort)
+        except openai.RateLimitError as exc:
+            delay = _retry_delay_seconds(exc)
+            _cooldowns[model] = time.monotonic() + delay
+            logger.warning("Chat model %s rate limited, skipping for %.0fs", model, delay)
+            last_error = exc
         except RETRYABLE_ERRORS as exc:
             logger.warning("Chat model %s failed: %s", model, type(exc).__name__)
             last_error = exc

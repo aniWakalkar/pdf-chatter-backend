@@ -2,19 +2,18 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import PurePath
+from urllib.parse import quote
 
 from fastapi import BackgroundTasks, Depends, File, HTTPException, Response, UploadFile, status
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from services.document_service.ingestion import fail_interrupted_documents, process_document
 from services.document_service.schemas import DocumentOut
-from services.document_service.storage import delete_file, resolve_path, save_file
 from shared.app_factory import create_service_app
 from shared.config import get_settings
 from shared.database import get_db
-from shared.models import Document, DocumentStatus
+from shared.models import Document, DocumentFile, DocumentStatus
 from shared.security import get_current_user_id
 
 ALLOWED_CONTENT_TYPES = {"application/pdf", "application/x-pdf", "application/octet-stream", ""}
@@ -66,21 +65,16 @@ async def upload_document(
     if not data.lstrip()[:5] == b"%PDF-":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "The file is not a valid PDF.")
 
-    storage_key = save_file(user_id, data)
     document = Document(
+        id=uuid.uuid4(),
         user_id=user_id,
         filename=filename,
-        storage_key=storage_key,
         size_bytes=len(data),
         status=DocumentStatus.UPLOADED,
     )
+    document.file = DocumentFile(content=data)
     db.add(document)
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-        delete_file(storage_key)
-        raise
+    db.commit()
     db.refresh(document)
     background_tasks.add_task(process_document, document.id)
     return document
@@ -109,15 +103,17 @@ def download_document(
     db: Session = Depends(get_db),
 ):
     document = _get_owned_document(db, document_id, user_id)
-    path = resolve_path(document.storage_key)
-    if not path.exists():
+    content = db.scalar(select(DocumentFile.content).where(DocumentFile.document_id == document.id))
+    if content is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found")
-    return FileResponse(
-        path,
+    return Response(
+        content=content,
         media_type="application/pdf",
-        filename=document.filename,
-        content_disposition_type="inline",
-        headers={"Cache-Control": "private, no-store"},
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(document.filename)}",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -145,9 +141,6 @@ def delete_document(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    document = _get_owned_document(db, document_id, user_id)
-    storage_key = document.storage_key
-    db.delete(document)
+    db.delete(_get_owned_document(db, document_id, user_id))
     db.commit()
-    delete_file(storage_key)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

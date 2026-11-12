@@ -178,6 +178,20 @@ def chat(payload: ChatRequest, user_id: uuid.UUID = Depends(get_current_user_id)
     except AIConfigurationError:
         db.rollback()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "The AI service is not configured.")
+    except openai.RateLimitError:
+        db.rollback()
+        logger.warning("AI quota exhausted")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "The AI usage limit has been reached for now. Please try again in a few minutes.",
+        )
+    except (openai.InternalServerError, openai.APITimeoutError, openai.APIConnectionError):
+        db.rollback()
+        logger.warning("AI service busy or unreachable")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "The AI service is busy right now. Please try again in a moment.",
+        )
     except openai.OpenAIError:
         db.rollback()
         logger.exception("AI request failed")

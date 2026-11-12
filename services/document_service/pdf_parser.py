@@ -1,5 +1,5 @@
+import io
 import re
-from pathlib import Path
 
 from pypdf import PdfReader
 
@@ -16,9 +16,9 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def extract_pages(path: Path) -> tuple[int, list[tuple[int, str]]]:
+def extract_pages(data: bytes) -> tuple[int, list[tuple[int, str]]]:
     try:
-        reader = PdfReader(str(path))
+        reader = PdfReader(io.BytesIO(data))
     except Exception as exc:
         raise PdfExtractionError("The file could not be read as a PDF.") from exc
 

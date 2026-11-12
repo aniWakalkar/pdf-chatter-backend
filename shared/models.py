@@ -9,6 +9,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -59,7 +60,6 @@ class Document(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     filename: Mapped[str] = mapped_column(String(255))
-    storage_key: Mapped[str] = mapped_column(String(512), unique=True)
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(20), default=DocumentStatus.UPLOADED)
     page_count: Mapped[int | None] = mapped_column(Integer)
@@ -69,6 +69,18 @@ class Document(TimestampMixin, Base):
     chunks: Mapped[list["DocumentChunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan", passive_deletes=True
     )
+    file: Mapped["DocumentFile"] = relationship(
+        cascade="all, delete-orphan", passive_deletes=True, uselist=False, lazy="noload"
+    )
+
+
+class DocumentFile(Base):
+    __tablename__ = "document_files"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    content: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class DocumentChunk(Base):

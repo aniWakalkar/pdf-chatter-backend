@@ -2,16 +2,15 @@ import logging
 import uuid
 
 import openai
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from services.document_service.chunker import chunk_pages
 from services.document_service.pdf_parser import PdfExtractionError, extract_pages
-from services.document_service.storage import resolve_path
 from shared.ai import AIConfigurationError, embed_texts
 from shared.config import get_settings
 from shared.database import SessionLocal
-from shared.models import Document, DocumentChunk, DocumentStatus
+from shared.models import Document, DocumentChunk, DocumentFile, DocumentStatus
 
 logger = logging.getLogger("document-service.ingestion")
 
@@ -44,7 +43,10 @@ def process_document(document_id: uuid.UUID) -> None:
             return
         try:
             _set_status(db, document, DocumentStatus.EXTRACTING)
-            page_count, pages = extract_pages(resolve_path(document.storage_key))
+            content = db.scalar(select(DocumentFile.content).where(DocumentFile.document_id == document.id))
+            if content is None:
+                raise PdfExtractionError("The original file is missing. Please delete and upload it again.")
+            page_count, pages = extract_pages(content)
             document.page_count = page_count
             if not pages:
                 raise PdfExtractionError(
@@ -81,6 +83,9 @@ def process_document(document_id: uuid.UUID) -> None:
             _fail(db, document_id, str(exc))
         except AIConfigurationError:
             _fail(db, document_id, "The AI service is not configured. Add AI_API_KEY and retry.")
+        except openai.RateLimitError:
+            logger.warning("Embedding quota exhausted for document %s", document_id)
+            _fail(db, document_id, "The AI usage limit has been reached. Please retry in a few minutes.")
         except openai.OpenAIError:
             logger.exception("Embedding failed for document %s", document_id)
             _fail(db, document_id, "The embedding service failed. Please retry.")

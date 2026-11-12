@@ -24,7 +24,7 @@ Internal services only accept requests carrying the `INTERNAL_SERVICE_TOKEN` add
 ### Ingestion flow
 `uploaded → extracting → indexing → ready / failed`
 
-1. Validate extension, MIME type, size and `%PDF-` signature; save the file and store its path in `documents.storage_key`.
+1. Validate extension, MIME type, size and `%PDF-` signature; store the PDF bytes in `document_files` (PostgreSQL), so files survive restarts on hosts with ephemeral disks.
 2. Extract text page by page (pypdf), normalise whitespace, skip empty pages.
 3. Split each page into ~800-token chunks with ~120-token overlap, keeping exact page numbers.
 4. Create 768-dimension embeddings in batches.
@@ -69,7 +69,9 @@ python run_all.py               # add --reload during development
 Gateway: http://127.0.0.1:8000 · Health: http://127.0.0.1:8000/api/health
 
 ## Database
-Run [database/schema.sql](database/schema.sql) in your PostgreSQL console, or `python scripts/init_db.py`. Tables: `users`, `documents`, `document_chunks`, `conversations`, `messages`, `message_sources`.
+Run [database/schema.sql](database/schema.sql) in your PostgreSQL console, or `python scripts/init_db.py`. Tables: `users`, `documents`, `document_files`, `document_chunks`, `conversations`, `messages`, `message_sources`.
+
+For an existing database, apply the files in [database/migrations](database/migrations) in order.
 
 ## Environment variables
 
@@ -80,12 +82,11 @@ Run [database/schema.sql](database/schema.sql) in your PostgreSQL console, or `p
 | INTERNAL_SERVICE_TOKEN | long random string | Gateway → service trust |
 | AI_PROVIDER | gemini | `gemini` or `openai` |
 | AI_API_KEY | — | Provider API key |
-| AI_CHAT_MODEL | gemini-3.5-flash | Answer model |
-| AI_FALLBACK_CHAT_MODEL | gemini-3.5-flash-lite | Used when the main model is unavailable |
+| AI_CHAT_MODEL | gemini-3.5-flash-lite | Answer model |
+| AI_FALLBACK_CHAT_MODEL | gemini-3.1-flash-lite,gemini-flash-lite-latest | Comma-separated models tried in order when the main model is busy or out of quota |
 | AI_REASONING_EFFORT | low | Leave empty for models without reasoning |
 | AI_EMBEDDING_MODEL | gemini-embedding-001 | Embedding model |
 | EMBEDDING_DIMENSIONS | 768 | Must match `VECTOR(768)` |
-| UPLOAD_DIR | ./uploads | PDF storage folder |
 | MAX_UPLOAD_MB | 20 | Upload limit |
 | CORS_ORIGINS | http://localhost:5173 | Comma-separated frontend origins |
 | HOST / PORT | 0.0.0.0 / 8000 | Gateway bind address (set by the host in production) |
@@ -124,11 +125,12 @@ Run [database/schema.sql](database/schema.sql) in your PostgreSQL console, or `p
 ## Security
 - Passwords hashed with bcrypt; JWT access tokens with expiry.
 - Ownership checked on every document, conversation and retrieval query.
-- Uploads validated by extension, MIME type, size and file signature; stored outside the web root.
+- Uploads validated by extension, MIME type, size and file signature; stored in the database and served only to the owner.
 - Document text is treated as untrusted input in prompts.
 - Rate limits on login, register, upload and chat.
 
 ## Known limitations
 - Scanned PDFs are marked failed (no OCR yet).
+- Free AI tiers have small per-model daily quotas. Models that hit their quota are skipped until the provider's retry time (capped at one hour), and the next fallback model is used.
 - Rate limiting is in-memory per gateway instance.
-- On hosts with ephemeral disks, uploaded PDF files are lost on restart; indexed text remains searchable.
+- PDFs are stored in PostgreSQL, so database storage limits apply (for example, the Neon free plan). Move files to S3-compatible storage for larger workloads.

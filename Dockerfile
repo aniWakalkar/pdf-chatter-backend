@@ -13,7 +13,7 @@ COPY database ./database
 COPY scripts ./scripts
 COPY run_all.py .
 
-RUN useradd --create-home appuser && mkdir -p /app/uploads && chown -R appuser /app
+RUN useradd --create-home appuser && chown -R appuser /app
 USER appuser
 
 EXPOSE 8000

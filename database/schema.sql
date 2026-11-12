@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     filename VARCHAR(255) NOT NULL,
-    storage_key VARCHAR(512) NOT NULL UNIQUE,
     size_bytes BIGINT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'uploaded'
         CHECK (status IN ('uploaded', 'extracting', 'indexing', 'ready', 'failed')),
@@ -25,6 +24,11 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 CREATE INDEX IF NOT EXISTS ix_documents_user_id ON documents(user_id);
+
+CREATE TABLE IF NOT EXISTS document_files (
+    document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    content BYTEA NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

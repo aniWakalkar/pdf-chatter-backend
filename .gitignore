@@ -3,7 +3,6 @@
 !.env.example
 .venv/
 venv/
-uploads/
 __pycache__/
 *.pyc
 .pytest_cache/
