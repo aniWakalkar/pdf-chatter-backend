@@ -88,7 +88,8 @@ For an existing database, apply the files in [database/migrations](database/migr
 | AI_EMBEDDING_MODEL | gemini-embedding-001 | Embedding model |
 | EMBEDDING_DIMENSIONS | 768 | Must match `VECTOR(768)` |
 | MAX_UPLOAD_MB | 20 | Upload limit |
-| CORS_ORIGINS | http://localhost:5173 | Comma-separated frontend origins |
+| ALLOWED_ORIGINS | http://localhost:5173,https://app.example.com | Comma-separated frontend origins allowed by CORS. Add more at any time; spaces and trailing slashes are ignored. `CORS_ORIGINS` is accepted as an alias |
+| ALLOWED_ORIGIN_REGEX | ^https://pdf-chatter-frontend(-[a-z0-9-]+)?\.onrender\.com$ | Optional pattern for dynamic origins such as preview deployments |
 | HOST / PORT | 0.0.0.0 / 8000 | Gateway bind address (set by the host in production) |
 
 ## Deployment (Render)
@@ -97,7 +98,7 @@ For an existing database, apply the files in [database/migrations](database/migr
 - Build command: `pip install -r requirements.txt`
 - Start command: `HOST=0.0.0.0 python run_all.py`
 - Health check path: `/api/health`
-- Set every variable above in the Render dashboard, with `CORS_ORIGINS` set to the frontend URL.
+- Set every variable above in the Render dashboard, with `ALLOWED_ORIGINS` set to the frontend URL(s).
 - Pick the region closest to your database for low latency.
 
 ## API

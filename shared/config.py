@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -55,7 +56,11 @@ class Settings(BaseSettings):
     auth_service_url: str = "http://127.0.0.1:8001"
     document_service_url: str = "http://127.0.0.1:8002"
     chat_service_url: str = "http://127.0.0.1:8003"
-    cors_origins: str = "http://localhost:5173"
+    allowed_origins: str = Field(
+        default="http://localhost:5173",
+        validation_alias=AliasChoices("ALLOWED_ORIGINS", "CORS_ORIGINS"),
+    )
+    allowed_origin_regex: str = ""
 
     def _provider_default(self, key: str) -> str:
         return PROVIDER_DEFAULTS.get(self.ai_provider.lower(), PROVIDER_DEFAULTS["openai"])[key]
@@ -91,8 +96,9 @@ class Settings(BaseSettings):
         return self.max_upload_mb * 1024 * 1024
 
     @property
-    def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+    def allowed_origin_list(self) -> list[str]:
+        origins = (o.strip().rstrip("/") for o in self.allowed_origins.replace("\n", ",").split(","))
+        return list(dict.fromkeys(o for o in origins if o))
 
 
 @lru_cache

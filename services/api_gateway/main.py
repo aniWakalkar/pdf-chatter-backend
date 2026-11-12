@@ -52,7 +52,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="api-gateway", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=settings.allowed_origin_list,
+    allow_origin_regex=settings.allowed_origin_regex or None,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
